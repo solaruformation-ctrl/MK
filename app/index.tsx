@@ -5,20 +5,37 @@ import { Colors } from '@/constants/colors';
 import { useAuth } from '@/lib/auth';
 
 export default function Index() {
-  const { session, loading } = useAuth();
+  const { session, profile, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (loading) return;
 
-    if (session) {
-      // User connecté → aller à l'app
-      router.replace('/(tabs)');
-    } else {
-      // Pas connecté → aller au login
+    if (!session) {
       router.replace('/login');
+      return;
     }
-  }, [session, loading]);
+
+    // Session existe, attendre le profil max 2s
+    const timeout = setTimeout(() => {
+      if (profile && profile.onboarding_completed) {
+        router.replace('/(tabs)');
+      } else {
+        router.replace('/onboarding');
+      }
+    }, 1500);
+
+    if (profile !== null) {
+      clearTimeout(timeout);
+      if (!profile.onboarding_completed) {
+        router.replace('/onboarding');
+      } else {
+        router.replace('/(tabs)');
+      }
+    }
+
+    return () => clearTimeout(timeout);
+  }, [session, profile, loading]);
 
   return (
     <View style={styles.container}>

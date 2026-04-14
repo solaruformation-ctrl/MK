@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,18 +12,37 @@ import {
   Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Mail, Lock, Eye, EyeOff, Dumbbell } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { Mail, Lock, Eye, EyeOff, Dumbbell, User } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
 import { useAuth } from '@/lib/auth';
 
 export default function LoginScreen() {
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, session, profile } = useAuth();
+  const router = useRouter();
   const [isLogin, setIsLogin] = useState(true);
+  const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Redirection automatique quand la session apparaît
+  useEffect(() => {
+    if (session && profile) {
+      if (!profile.onboarding_completed) {
+        router.replace('/onboarding');
+      } else {
+        router.replace('/(tabs)');
+      }
+    } else if (session && !profile) {
+      const timeout = setTimeout(() => {
+        router.replace('/onboarding');
+      }, 2000);
+      return () => clearTimeout(timeout);
+    }
+  }, [session, profile]);
 
   const handleSubmit = async () => {
     if (!email || !password) {
@@ -41,21 +60,36 @@ export default function LoginScreen() {
       return;
     }
 
-    setLoading(true);
-
-    if (isLogin) {
-      const { error } = await signIn(email, password);
-      if (error) {
-        console.log('ERREUR LOGIN:', error.message);
-        Alert.alert('Erreur de connexion', error.message === 'Invalid login credentials'
-          ? 'Email ou mot de passe incorrect'
-          : error.message);
-      } else {
-        console.log('LOGIN OK - session devrait se mettre à jour');
-      }
+    if (!isLogin && !displayName.trim()) {
+      Alert.alert('Erreur', 'Veuillez entrer votre prénom');
+      return;
     }
 
-    setLoading(false);
+    setLoading(true);
+
+    try {
+      if (isLogin) {
+        const { error } = await signIn(email, password);
+        if (error) {
+          Alert.alert('Erreur de connexion',
+            error.message === 'Invalid login credentials'
+              ? 'Email ou mot de passe incorrect'
+              : error.message
+          );
+          setLoading(false);
+        }
+      } else {
+        const { error } = await signUp(email, password, displayName.trim());
+        if (error) {
+          Alert.alert("Erreur d'inscription", error.message);
+          setLoading(false);
+        }
+      }
+    } catch (e) {
+      console.error('Auth error:', e);
+      Alert.alert('Erreur', 'Une erreur est survenue. Réessaie.');
+      setLoading(false);
+    }
   };
 
   return (
@@ -66,8 +100,7 @@ export default function LoginScreen() {
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}>
-          
-          {/* Logo / Header */}
+
           <View style={styles.header}>
             <View style={styles.logoContainer}>
               <Dumbbell size={48} color={Colors.gold} strokeWidth={2} />
@@ -76,13 +109,25 @@ export default function LoginScreen() {
             <Text style={styles.tagline}>Votre coaching personnalisé</Text>
           </View>
 
-          {/* Formulaire */}
           <View style={styles.form}>
             <Text style={styles.formTitle}>
               {isLogin ? 'Connexion' : 'Créer un compte'}
             </Text>
 
-            {/* Email */}
+            {!isLogin && (
+              <View style={styles.inputContainer}>
+                <User size={20} color={Colors.grayText} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Prénom"
+                  placeholderTextColor={Colors.grayText}
+                  value={displayName}
+                  onChangeText={setDisplayName}
+                  autoCapitalize="words"
+                />
+              </View>
+            )}
+
             <View style={styles.inputContainer}>
               <Mail size={20} color={Colors.grayText} style={styles.inputIcon} />
               <TextInput
@@ -97,7 +142,6 @@ export default function LoginScreen() {
               />
             </View>
 
-            {/* Mot de passe */}
             <View style={styles.inputContainer}>
               <Lock size={20} color={Colors.grayText} style={styles.inputIcon} />
               <TextInput
@@ -118,7 +162,6 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Confirmer mot de passe (inscription) */}
             {!isLogin && (
               <View style={styles.inputContainer}>
                 <Lock size={20} color={Colors.grayText} style={styles.inputIcon} />
@@ -134,7 +177,6 @@ export default function LoginScreen() {
               </View>
             )}
 
-            {/* Bouton principal */}
             <TouchableOpacity
               style={styles.submitButton}
               onPress={handleSubmit}
@@ -154,19 +196,17 @@ export default function LoginScreen() {
               </LinearGradient>
             </TouchableOpacity>
 
-            {/* Mot de passe oublié */}
             {isLogin && (
               <TouchableOpacity style={styles.forgotButton}>
                 <Text style={styles.forgotText}>Mot de passe oublié ?</Text>
               </TouchableOpacity>
             )}
 
-            {/* Switch login/signup */}
             <View style={styles.switchContainer}>
               <Text style={styles.switchText}>
                 {isLogin ? "Pas encore de compte ?" : 'Déjà un compte ?'}
               </Text>
-              <TouchableOpacity onPress={() => setIsLogin(!isLogin)}>
+              <TouchableOpacity onPress={() => { setIsLogin(!isLogin); setLoading(false); }}>
                 <Text style={styles.switchLink}>
                   {isLogin ? "S'inscrire" : 'Se connecter'}
                 </Text>
@@ -180,115 +220,52 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  keyboardView: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  keyboardView: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: 24,
     paddingVertical: 40,
   },
-  header: {
-    alignItems: 'center',
-    marginBottom: 40,
-  },
+  header: { alignItems: 'center', marginBottom: 40 },
   logoContainer: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
+    width: 90, height: 90, borderRadius: 45,
     backgroundColor: 'rgba(212, 175, 55, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: Colors.gold,
+    justifyContent: 'center', alignItems: 'center',
+    marginBottom: 16, borderWidth: 2, borderColor: Colors.gold,
   },
-  appName: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: Colors.gold,
-    letterSpacing: 4,
-  },
-  tagline: {
-    fontSize: 14,
-    color: Colors.grayText,
-    marginTop: 8,
-  },
+  appName: { fontSize: 32, fontWeight: '800', color: Colors.gold, letterSpacing: 4 },
+  tagline: { fontSize: 14, color: Colors.grayText, marginTop: 8 },
   form: {
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 20,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(212, 175, 55, 0.2)',
+    borderRadius: 20, padding: 24,
+    borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.2)',
   },
   formTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: Colors.white,
-    textAlign: 'center',
-    marginBottom: 24,
+    fontSize: 22, fontWeight: '700', color: Colors.white,
+    textAlign: 'center', marginBottom: 24,
   },
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    height: 52,
+    borderRadius: 12, paddingHorizontal: 16, marginBottom: 16,
+    borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)', height: 52,
   },
-  inputIcon: {
-    marginRight: 12,
-  },
-  input: {
-    flex: 1,
-    color: Colors.white,
-    fontSize: 16,
-    height: '100%',
-  },
-  submitButton: {
-    marginTop: 8,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
+  inputIcon: { marginRight: 12 },
+  input: { flex: 1, color: Colors.white, fontSize: 16, height: '100%' },
+  submitButton: { marginTop: 8, borderRadius: 12, overflow: 'hidden' },
   submitGradient: {
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
+    paddingVertical: 16, alignItems: 'center',
+    justifyContent: 'center', borderRadius: 12,
   },
-  submitText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.black,
-  },
-  forgotButton: {
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  forgotText: {
-    color: Colors.grayText,
-    fontSize: 14,
-  },
+  submitText: { fontSize: 18, fontWeight: '700', color: Colors.black },
+  forgotButton: { alignItems: 'center', marginTop: 16 },
+  forgotText: { color: Colors.grayText, fontSize: 14 },
   switchContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 20,
-    gap: 6,
+    flexDirection: 'row', justifyContent: 'center',
+    marginTop: 20, gap: 6,
   },
-  switchText: {
-    color: Colors.grayText,
-    fontSize: 14,
-  },
-  switchLink: {
-    color: Colors.gold,
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  switchText: { color: Colors.grayText, fontSize: 14 },
+  switchLink: { color: Colors.gold, fontSize: 14, fontWeight: '600' },
 });

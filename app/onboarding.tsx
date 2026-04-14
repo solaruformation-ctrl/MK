@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,338 +10,248 @@ import {
   Animated,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { Check, Sparkles } from 'lucide-react-native';
+import { Check, Sparkles, ChevronRight } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
-type Question = {
+type Step = {
   id: number;
-  text: string;
-  type: 'welcome' | 'single' | 'multiple' | 'number' | 'scale' | 'text';
-  options?: string[];
+  title: string;
+  subtitle?: string;
+  type: 'welcome' | 'single' | 'multiple' | 'number' | 'scale';
   field?: string;
+  options?: { label: string; value: string }[];
+  unit?: string;
   placeholder?: string;
 };
 
-const questions: Question[] = [
+const steps: Step[] = [
   {
     id: 0,
-    text: "Bienvenue dans l'aventure ! 🚀\n\nAvant de t'accompagner dans ta transformation, nous allons configurer ton profil pour créer un programme 100% personnalisé.\n\nCela prend moins de 2 minutes !",
+    title: "Bienvenue dans MK Form ! 🚀",
+    subtitle: "On va configurer ton programme personnalisé en quelques questions. C'est parti !",
     type: 'welcome',
   },
   {
     id: 1,
-    text: "Commençons simple : quel âge as-tu ?",
-    type: 'number',
-    field: 'age',
-    placeholder: 'Ton âge',
-  },
-  {
-    id: 2,
-    text: "Comment te définis-tu ?",
+    title: "Quel est ton objectif principal ?",
     type: 'single',
-    field: 'gender',
-    options: ['Homme', 'Femme', 'Autre'],
-  },
-  {
-    id: 3,
-    text: "À quel moment de la journée as-tu le plus d'énergie ?",
-    type: 'single',
-    field: 'biorhythm',
-    options: ['Matin', 'Après-midi', 'Soir'],
-  },
-  {
-    id: 4,
-    text: "Sur une échelle de 1 à 5, comment évalues-tu ton niveau d'énergie général ?",
-    type: 'scale',
-    field: 'energy_level',
-    options: ['1', '2', '3', '4', '5'],
-  },
-  {
-    id: 5,
-    text: "Comment décrirais-tu ton niveau actuel ?",
-    type: 'single',
-    field: 'activity_level',
-    options: ['Débutant', 'Intermédiaire', 'Confirmé'],
-  },
-  {
-    id: 6,
-    text: "Combien de fois par semaine t'entraînes-tu actuellement ?",
-    type: 'scale',
-    field: 'weekly_frequency',
-    options: ['1', '2', '3', '4', '5', '6', '7+'],
-  },
-  {
-    id: 7,
-    text: "Où préfères-tu t'entraîner ?",
-    type: 'single',
-    field: 'practice_location',
-    options: ['Salle', 'Maison', 'Extérieur', 'Coach', 'Collectif'],
-  },
-  {
-    id: 8,
-    text: "Quels sont tes objectifs ? (tu peux en choisir plusieurs)",
-    type: 'multiple',
     field: 'goals',
     options: [
-      'Perte de poids',
-      'Prise de muscle',
-      'Remise en forme',
-      'Cardio',
-      'Mental / Motivation',
-      'Bien-être global',
-      'Réduction du stress',
+      { label: '🔥 Perdre du poids', value: 'perte_poids' },
+      { label: '💪 Prendre du muscle', value: 'prise_muscle' },
+      { label: '🏃 Remise en forme', value: 'remise_forme' },
+      { label: '🧘 Bien-être & santé', value: 'bien_etre' },
+      { label: '⚡ Performance sportive', value: 'performance' },
     ],
   },
   {
-    id: 9,
-    text: "Tu t'entraînes plutôt...",
+    id: 2,
+    title: "Quel est ton niveau ?",
     type: 'single',
-    field: 'training_environment',
-    options: ['À la maison', 'En salle'],
+    field: 'fitness_level',
+    options: [
+      { label: '🌱 Débutant — Je commence', value: 'debutant' },
+      { label: '🌿 Intermédiaire — Je pratique régulièrement', value: 'intermediaire' },
+      { label: '🌳 Confirmé — Je m\'entraîne depuis longtemps', value: 'confirme' },
+    ],
   },
   {
-    id: 10,
-    text: "Quel matériel as-tu à disposition ? (choix multiples)",
+    id: 3,
+    title: "Combien de séances par semaine ?",
+    type: 'scale',
+    field: 'weekly_frequency',
+    options: [
+      { label: '2', value: '2' },
+      { label: '3', value: '3' },
+      { label: '4', value: '4' },
+      { label: '5', value: '5' },
+      { label: '6+', value: '6' },
+    ],
+  },
+  {
+    id: 4,
+    title: "Tu t'entraînes où ?",
+    type: 'single',
+    field: 'practice_location',
+    options: [
+      { label: '🏠 À la maison', value: 'maison' },
+      { label: '🏋️ En salle', value: 'salle' },
+      { label: '🌳 En extérieur', value: 'exterieur' },
+      { label: '🔄 Un peu partout', value: 'mixte' },
+    ],
+  },
+  {
+    id: 5,
+    title: "Quel matériel as-tu ?",
+    subtitle: "Sélectionne tout ce que tu as",
     type: 'multiple',
     field: 'available_equipment',
-    options: ['Haltères', 'Barre', 'Corde', 'Poids du corps', 'Machines', 'Aucun'],
+    options: [
+      { label: 'Haltères', value: 'halteres' },
+      { label: 'Barre & poids', value: 'barre' },
+      { label: 'Bandes élastiques', value: 'elastiques' },
+      { label: 'Corde à sauter', value: 'corde' },
+      { label: 'Machines', value: 'machines' },
+      { label: 'Tapis de yoga', value: 'tapis' },
+      { label: 'Rien (poids du corps)', value: 'aucun' },
+    ],
   },
   {
-    id: 11,
-    text: "Sur une échelle de 1 à 5, quel est ton niveau de stress actuel ?",
-    type: 'scale',
-    field: 'stress_level',
-    options: ['1', '2', '3', '4', '5'],
-  },
-  {
-    id: 12,
-    text: "Qu'est-ce qui te motive le plus ? (choix multiples)",
-    type: 'multiple',
-    field: 'main_motivations',
-    options: ['Santé', 'Esthétique', 'Performance', 'Bien-être mental', 'Confiance en soi'],
-  },
-  {
-    id: 13,
-    text: "Quels sont tes principaux freins ? (choix multiples)",
-    type: 'multiple',
-    field: 'main_obstacles',
-    options: ['Manque de temps', 'Motivation', 'Fatigue', 'Connaissances', 'Discipline'],
-  },
-  {
-    id: 14,
-    text: "Comment décrirais-tu ton mode de vie ?",
+    id: 6,
+    title: "Tu préfères t'entraîner quand ?",
     type: 'single',
-    field: 'lifestyle_mode',
-    options: ['Actif', 'Modéré', 'Sédentaire'],
+    field: 'preferred_time',
+    options: [
+      { label: '🌅 Le matin', value: 'matin' },
+      { label: '☀️ L\'après-midi', value: 'apres-midi' },
+      { label: '🌙 Le soir', value: 'soir' },
+    ],
   },
   {
-    id: 15,
-    text: "Quels sont tes objectifs nutritionnels ? (choix multiples)",
-    type: 'multiple',
-    field: 'nutrition_goals',
-    options: ['Perte de poids', 'Prise de masse', 'Maintien', 'Rééquilibrage', 'Performance'],
-  },
-  {
-    id: 16,
-    text: "Comment évalues-tu la qualité de ton sommeil ? (1 à 5)",
-    type: 'scale',
-    field: 'sleep_quality',
-    options: ['1', '2', '3', '4', '5'],
-  },
-  {
-    id: 17,
-    text: "As-tu des restrictions alimentaires ou allergies ? (optionnel)",
-    type: 'text',
-    field: 'restrictions_allergies',
-    placeholder: 'Ex: Lactose, Gluten...',
+    id: 7,
+    title: "Dernière étape — ton profil",
+    subtitle: "Ces infos aident l'IA à personnaliser ton programme",
+    type: 'number',
+    field: 'body_info',
   },
 ];
 
 export default function OnboardingScreen() {
   const router = useRouter();
-  const scrollViewRef = useRef<ScrollView>(null);
-  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const { updateProfile, refreshProfile } = useAuth();
+  const scrollRef = useRef<ScrollView>(null);
+  const [currentStep, setCurrentStep] = useState(0);
   const [answers, setAnswers] = useState<any>({});
-  const [visibleQuestions, setVisibleQuestions] = useState<number[]>([0]);
+  const [age, setAge] = useState('');
+  const [heightCm, setHeightCm] = useState('');
+  const [weightKg, setWeightKg] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const bubbleAnimations = useRef<{ [key: number]: Animated.Value }>(
-    questions.reduce((acc, q) => ({ ...acc, [q.id]: new Animated.Value(0) }), {})
-  ).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
 
-  useEffect(() => {
-    if (visibleQuestions.includes(currentQuestion)) {
-      Animated.spring(bubbleAnimations[currentQuestion], {
-        toValue: 1,
-        tension: 50,
-        friction: 7,
-        useNativeDriver: true,
-      }).start();
+  const animateTransition = (callback: () => void) => {
+    Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => {
+      callback();
+      Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }).start();
+    });
+  };
 
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }
-  }, [visibleQuestions, currentQuestion]);
-
-  const handleAnswer = (field: string | undefined, value: any) => {
-    if (!field) {
-      nextQuestion();
-      return;
-    }
-
-    const question = questions[currentQuestion];
-
-    if (question.type === 'multiple') {
-      const currentValues = answers[field] || [];
-      const newValues = currentValues.includes(value)
-        ? currentValues.filter((v: any) => v !== value)
-        : [...currentValues, value];
-      setAnswers({ ...answers, [field]: newValues });
+  const handleSingleSelect = (field: string, value: string) => {
+    if (field === 'goals') {
+      setAnswers({ ...answers, [field]: [value] });
     } else {
       setAnswers({ ...answers, [field]: value });
-      setTimeout(() => nextQuestion(), 300);
+    }
+    setTimeout(() => goNext(), 300);
+  };
+
+  const handleMultiSelect = (field: string, value: string) => {
+    const current = answers[field] || [];
+    if (value === 'aucun') {
+      setAnswers({ ...answers, [field]: ['aucun'] });
+      return;
+    }
+    const filtered = current.filter((v: string) => v !== 'aucun');
+    const updated = filtered.includes(value)
+      ? filtered.filter((v: string) => v !== value)
+      : [...filtered, value];
+    setAnswers({ ...answers, [field]: updated });
+  };
+
+  const handleScaleSelect = (field: string, value: string) => {
+    setAnswers({ ...answers, [field]: parseInt(value) });
+    setTimeout(() => goNext(), 300);
+  };
+
+  const goNext = () => {
+    if (currentStep < steps.length - 1) {
+      animateTransition(() => setCurrentStep(currentStep + 1));
     }
   };
 
-  const nextQuestion = () => {
-    if (currentQuestion < questions.length - 1) {
-      const nextQ = currentQuestion + 1;
-      setCurrentQuestion(nextQ);
-      setVisibleQuestions([...visibleQuestions, nextQ]);
-    } else {
-      handleComplete();
+  const goBack = () => {
+    if (currentStep > 0) {
+      animateTransition(() => setCurrentStep(currentStep - 1));
     }
   };
 
   const handleComplete = async () => {
+    setSaving(true);
     try {
-      const profileData: any = { ...answers };
+      const profileData: any = {
+        ...answers,
+        onboarding_completed: true,
+      };
 
-      if (answers.weekly_frequency === '7+') {
-        profileData.weekly_frequency = 7;
-      } else if (answers.weekly_frequency) {
-        profileData.weekly_frequency = parseInt(answers.weekly_frequency);
+      if (age) profileData.age = parseInt(age);
+      if (heightCm) profileData.height_cm = parseInt(heightCm);
+      if (weightKg) profileData.weight_kg = parseFloat(weightKg);
+
+      const { error } = await updateProfile(profileData);
+
+      if (error) {
+        console.error('Error saving profile:', error);
+        Alert.alert('Erreur', 'Impossible de sauvegarder le profil. Réessaie.');
+        setSaving(false);
+        return;
       }
 
-      ['age', 'energy_level', 'stress_level', 'sleep_quality'].forEach(field => {
-        if (answers[field]) {
-          profileData[field] = parseInt(answers[field]);
-        }
-      });
-
-      await supabase.from('user_profiles').insert({
-        ...profileData,
-        onboarding_completed: true,
-      });
-
+      await refreshProfile();
       router.replace('/(tabs)');
-    } catch (error) {
-      console.error('Error saving profile:', error);
+    } catch (e) {
+      console.error('Error completing onboarding:', e);
+      Alert.alert('Erreur', 'Une erreur est survenue. Réessaie.');
+      setSaving(false);
     }
   };
 
-  const renderBubble = (question: Question, index: number) => {
-    const isVisible = visibleQuestions.includes(index);
-    if (!isVisible) return null;
+  const step = steps[currentStep];
+  const progress = currentStep / (steps.length - 1);
 
-    const animation = bubbleAnimations[question.id];
-    const isActive = currentQuestion === index;
+  const renderStepContent = () => {
+    switch (step.type) {
+      case 'welcome':
+        return (
+          <View style={styles.welcomeContainer}>
+            <Text style={styles.welcomeEmoji}>💪</Text>
+            <Text style={styles.welcomeTitle}>{step.title}</Text>
+            <Text style={styles.welcomeSubtitle}>{step.subtitle}</Text>
+            <TouchableOpacity style={styles.startButton} onPress={goNext}>
+              <LinearGradient
+                colors={[Colors.gold, Colors.goldDark]}
+                style={styles.startGradient}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                <Text style={styles.startText}>C'est parti !</Text>
+                <Sparkles size={20} color={Colors.black} />
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        );
 
-    return (
-      <Animated.View
-        key={question.id}
-        style={[
-          styles.bubbleContainer,
-          {
-            opacity: animation,
-            transform: [
-              {
-                translateY: animation.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [50, 0],
-                }),
-              },
-              {
-                scale: animation.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.9, 1],
-                }),
-              },
-            ],
-          },
-        ]}>
-        <View style={styles.bubble}>
-          <Text style={styles.bubbleText}>{question.text}</Text>
-        </View>
-
-        {isActive && question.type !== 'welcome' && (
-          <Animated.View
-            style={[
-              styles.answersContainer,
-              {
-                opacity: animation,
-              },
-            ]}>
-            {renderAnswerInput(question)}
-          </Animated.View>
-        )}
-
-        {isActive && question.type === 'welcome' && (
-          <TouchableOpacity
-            style={styles.startButton}
-            onPress={() => nextQuestion()}
-            activeOpacity={0.8}>
-            <LinearGradient
-              colors={[Colors.gold, Colors.goldDark]}
-              style={styles.startButtonGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}>
-              <Text style={styles.startButtonText}>C'est parti !</Text>
-              <Sparkles size={20} color={Colors.black} strokeWidth={2.5} />
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
-
-        {isActive && question.type === 'multiple' && (
-          <TouchableOpacity
-            style={styles.continueButton}
-            onPress={() => nextQuestion()}
-            activeOpacity={0.8}>
-            <Text style={styles.continueButtonText}>Continuer</Text>
-          </TouchableOpacity>
-        )}
-      </Animated.View>
-    );
-  };
-
-  const renderAnswerInput = (question: Question) => {
-    const currentValue = answers[question.field!];
-
-    switch (question.type) {
       case 'single':
         return (
           <View style={styles.optionsContainer}>
-            {question.options?.map((option) => (
+            {step.options?.map((opt) => (
               <TouchableOpacity
-                key={option}
+                key={opt.value}
                 style={[
-                  styles.optionButton,
-                  currentValue === option && styles.optionButtonSelected,
+                  styles.optionCard,
+                  answers[step.field!] === opt.value && styles.optionCardSelected,
+                  (step.field === 'goals' && answers[step.field!]?.[0] === opt.value) && styles.optionCardSelected,
                 ]}
-                onPress={() => handleAnswer(question.field, option)}
-                activeOpacity={0.7}>
-                <Text
-                  style={[
-                    styles.optionText,
-                    currentValue === option && styles.optionTextSelected,
-                  ]}>
-                  {option}
+                onPress={() => handleSingleSelect(step.field!, opt.value)}>
+                <Text style={[
+                  styles.optionLabel,
+                  (answers[step.field!] === opt.value || answers[step.field!]?.[0] === opt.value) && styles.optionLabelSelected,
+                ]}>
+                  {opt.label}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -349,54 +259,52 @@ export default function OnboardingScreen() {
         );
 
       case 'multiple':
-        const selectedValues = currentValue || [];
+        const selected = answers[step.field!] || [];
         return (
           <View style={styles.optionsContainer}>
-            {question.options?.map((option) => {
-              const isSelected = selectedValues.includes(option);
+            {step.options?.map((opt) => {
+              const isSelected = selected.includes(opt.value);
               return (
                 <TouchableOpacity
-                  key={option}
-                  style={[
-                    styles.optionButton,
-                    isSelected && styles.optionButtonSelected,
-                  ]}
-                  onPress={() => handleAnswer(question.field, option)}
-                  activeOpacity={0.7}>
-                  <Text
-                    style={[
-                      styles.optionText,
-                      isSelected && styles.optionTextSelected,
-                    ]}>
-                    {option}
+                  key={opt.value}
+                  style={[styles.optionCard, isSelected && styles.optionCardSelected]}
+                  onPress={() => handleMultiSelect(step.field!, opt.value)}>
+                  <Text style={[styles.optionLabel, isSelected && styles.optionLabelSelected]}>
+                    {opt.label}
                   </Text>
-                  {isSelected && (
-                    <Check size={18} color={Colors.black} strokeWidth={2.5} />
-                  )}
+                  {isSelected && <Check size={20} color={Colors.black} />}
                 </TouchableOpacity>
               );
             })}
+            <TouchableOpacity style={styles.continueBtn} onPress={goNext}>
+              <Text style={styles.continueBtnText}>Continuer</Text>
+              <ChevronRight size={20} color={Colors.black} />
+            </TouchableOpacity>
           </View>
         );
 
       case 'scale':
         return (
           <View style={styles.scaleContainer}>
-            {question.options?.map((option) => (
+            {step.options?.map((opt) => (
               <TouchableOpacity
-                key={option}
+                key={opt.value}
                 style={[
-                  styles.scaleButton,
-                  currentValue === option && styles.scaleButtonSelected,
+                  styles.scaleBtn,
+                  answers[step.field!] === parseInt(opt.value) && styles.scaleBtnSelected,
                 ]}
-                onPress={() => handleAnswer(question.field, option)}
-                activeOpacity={0.7}>
-                <Text
-                  style={[
-                    styles.scaleText,
-                    currentValue === option && styles.scaleTextSelected,
-                  ]}>
-                  {option}
+                onPress={() => handleScaleSelect(step.field!, opt.value)}>
+                <Text style={[
+                  styles.scaleText,
+                  answers[step.field!] === parseInt(opt.value) && styles.scaleTextSelected,
+                ]}>
+                  {opt.label}
+                </Text>
+                <Text style={[
+                  styles.scaleSubtext,
+                  answers[step.field!] === parseInt(opt.value) && styles.scaleTextSelected,
+                ]}>
+                  {opt.label === '2' ? 'fois' : opt.label === '6+' ? 'fois' : 'fois'}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -405,54 +313,57 @@ export default function OnboardingScreen() {
 
       case 'number':
         return (
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder={question.placeholder}
-              placeholderTextColor={Colors.grayText}
-              keyboardType="numeric"
-              value={currentValue?.toString() || ''}
-              onChangeText={(text) => setAnswers({ ...answers, [question.field!]: text })}
-              autoFocus
-            />
+          <View style={styles.bodyInfoContainer}>
+            <View style={styles.bodyRow}>
+              <Text style={styles.bodyLabel}>Âge</Text>
+              <TextInput
+                style={styles.bodyInput}
+                value={age}
+                onChangeText={setAge}
+                keyboardType="numeric"
+                placeholder="—"
+                placeholderTextColor={Colors.grayText}
+                maxLength={3}
+              />
+              <Text style={styles.bodyUnit}>ans</Text>
+            </View>
+            <View style={styles.bodyRow}>
+              <Text style={styles.bodyLabel}>Taille</Text>
+              <TextInput
+                style={styles.bodyInput}
+                value={heightCm}
+                onChangeText={setHeightCm}
+                keyboardType="numeric"
+                placeholder="—"
+                placeholderTextColor={Colors.grayText}
+                maxLength={3}
+              />
+              <Text style={styles.bodyUnit}>cm</Text>
+            </View>
+            <View style={styles.bodyRow}>
+              <Text style={styles.bodyLabel}>Poids</Text>
+              <TextInput
+                style={styles.bodyInput}
+                value={weightKg}
+                onChangeText={setWeightKg}
+                keyboardType="decimal-pad"
+                placeholder="—"
+                placeholderTextColor={Colors.grayText}
+                maxLength={5}
+              />
+              <Text style={styles.bodyUnit}>kg</Text>
+            </View>
             <TouchableOpacity
-              style={styles.submitButton}
-              onPress={() => nextQuestion()}
-              disabled={!currentValue}
-              activeOpacity={0.7}>
-              <LinearGradient
-                colors={currentValue ? [Colors.gold, Colors.goldDark] : [Colors.grayLight, Colors.grayLight]}
-                style={styles.submitButtonGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}>
-                <Text style={styles.submitButtonText}>OK</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        );
-
-      case 'text':
-        return (
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={[styles.input, styles.textInput]}
-              placeholder={question.placeholder}
-              placeholderTextColor={Colors.grayText}
-              value={currentValue || ''}
-              onChangeText={(text) => setAnswers({ ...answers, [question.field!]: text })}
-              multiline
-              autoFocus
-            />
-            <TouchableOpacity
-              style={styles.submitButton}
-              onPress={() => nextQuestion()}
-              activeOpacity={0.7}>
+              style={[styles.finishBtn, saving && styles.finishBtnDisabled]}
+              onPress={handleComplete}
+              disabled={saving}>
               <LinearGradient
                 colors={[Colors.gold, Colors.goldDark]}
-                style={styles.submitButtonGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}>
-                <Text style={styles.submitButtonText}>OK</Text>
+                style={styles.finishGradient}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                <Text style={styles.finishText}>
+                  {saving ? 'Création du programme...' : 'Lancer mon programme 🚀'}
+                </Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -466,38 +377,42 @@ export default function OnboardingScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={0}>
-      <LinearGradient
-        colors={[Colors.black, Colors.gray]}
-        style={styles.gradient}>
-
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <LinearGradient colors={[Colors.black, Colors.gray]} style={styles.gradient}>
+        {/* Progress bar */}
         <View style={styles.header}>
-          <View style={styles.progressBarContainer}>
-            <View style={styles.progressBarBackground}>
-              <LinearGradient
-                colors={[Colors.gold, Colors.goldDark]}
-                style={[
-                  styles.progressBarFill,
-                  { width: `${(currentQuestion / (questions.length - 1)) * 100}%` },
-                ]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              />
-            </View>
-            <Text style={styles.progressText}>
-              {currentQuestion} / {questions.length - 1}
-            </Text>
+          {currentStep > 0 && (
+            <TouchableOpacity onPress={goBack} style={styles.backBtn}>
+              <Text style={styles.backText}>← Retour</Text>
+            </TouchableOpacity>
+          )}
+          <View style={styles.progressBar}>
+            <LinearGradient
+              colors={[Colors.gold, Colors.goldDark]}
+              style={[styles.progressFill, { width: `${progress * 100}%` }]}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            />
           </View>
+          <Text style={styles.progressText}>{currentStep}/{steps.length - 1}</Text>
         </View>
 
+        {/* Contenu */}
         <ScrollView
-          ref={scrollViewRef}
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}>
-          {questions.map((question, index) => renderBubble(question, index))}
-          <View style={styles.bottomSpacer} />
+          ref={scrollRef}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled">
+          <Animated.View style={{ opacity: fadeAnim }}>
+            {step.type !== 'welcome' && (
+              <View style={styles.questionHeader}>
+                <Text style={styles.questionTitle}>{step.title}</Text>
+                {step.subtitle && (
+                  <Text style={styles.questionSubtitle}>{step.subtitle}</Text>
+                )}
+              </View>
+            )}
+            {renderStepContent()}
+          </Animated.View>
         </ScrollView>
       </LinearGradient>
     </KeyboardAvoidingView>
@@ -505,189 +420,87 @@ export default function OnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.black,
-  },
-  gradient: {
-    flex: 1,
-  },
+  container: { flex: 1, backgroundColor: Colors.black },
+  gradient: { flex: 1 },
   header: {
-    paddingTop: 60,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingTop: 60, paddingHorizontal: 20, paddingBottom: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
   },
-  progressBarContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 15,
+  backBtn: { paddingVertical: 4 },
+  backText: { color: Colors.grayText, fontSize: 14, fontWeight: '600' },
+  progressBar: {
+    flex: 1, height: 6, backgroundColor: Colors.grayLight,
+    borderRadius: 3, overflow: 'hidden',
   },
-  progressBarBackground: {
-    flex: 1,
-    height: 6,
-    backgroundColor: Colors.grayLight,
-    borderRadius: 3,
-    overflow: 'hidden',
+  progressFill: { height: '100%', borderRadius: 3 },
+  progressText: { color: Colors.gold, fontSize: 14, fontWeight: '700', minWidth: 36, textAlign: 'right' },
+  content: { paddingHorizontal: 20, paddingBottom: 40, flexGrow: 1 },
+
+  // Welcome
+  welcomeContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40 },
+  welcomeEmoji: { fontSize: 64, marginBottom: 24 },
+  welcomeTitle: { fontSize: 28, fontWeight: '800', color: Colors.white, textAlign: 'center', marginBottom: 16 },
+  welcomeSubtitle: { fontSize: 16, color: Colors.grayText, textAlign: 'center', lineHeight: 24, marginBottom: 40 },
+  startButton: { borderRadius: 16, overflow: 'hidden' },
+  startGradient: {
+    paddingVertical: 18, paddingHorizontal: 40,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
   },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 3,
+  startText: { fontSize: 18, fontWeight: '800', color: Colors.black },
+
+  // Question
+  questionHeader: { marginTop: 20, marginBottom: 24 },
+  questionTitle: { fontSize: 24, fontWeight: '800', color: Colors.white, lineHeight: 32 },
+  questionSubtitle: { fontSize: 14, color: Colors.grayText, marginTop: 8 },
+
+  // Options
+  optionsContainer: { gap: 12 },
+  optionCard: {
+    backgroundColor: Colors.grayLight, borderRadius: 16, padding: 18,
+    borderWidth: 2, borderColor: 'transparent',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
-  progressText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.gold,
-    minWidth: 60,
-    textAlign: 'right',
+  optionCardSelected: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  optionLabel: { fontSize: 16, fontWeight: '700', color: Colors.white, flex: 1 },
+  optionLabelSelected: { color: Colors.black },
+
+  // Scale
+  scaleContainer: { flexDirection: 'row', gap: 10, justifyContent: 'center' },
+  scaleBtn: {
+    flex: 1, backgroundColor: Colors.grayLight, borderRadius: 16,
+    paddingVertical: 24, alignItems: 'center',
+    borderWidth: 2, borderColor: 'transparent',
   },
-  scrollView: {
-    flex: 1,
+  scaleBtnSelected: { backgroundColor: Colors.gold, borderColor: Colors.gold },
+  scaleText: { fontSize: 24, fontWeight: '800', color: Colors.white },
+  scaleTextSelected: { color: Colors.black },
+  scaleSubtext: { fontSize: 11, color: Colors.grayText, marginTop: 4 },
+
+  // Continue
+  continueBtn: {
+    backgroundColor: Colors.gold, borderRadius: 16, padding: 18,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    marginTop: 8,
   },
-  scrollContent: {
-    padding: 20,
-    paddingTop: 10,
+  continueBtnText: { fontSize: 16, fontWeight: '800', color: Colors.black },
+
+  // Body info
+  bodyInfoContainer: { gap: 20 },
+  bodyRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.grayLight, borderRadius: 16, padding: 18, gap: 16,
   },
-  bubbleContainer: {
-    marginBottom: 20,
-    alignItems: 'flex-start',
+  bodyLabel: { fontSize: 16, fontWeight: '700', color: Colors.white, width: 60 },
+  bodyInput: {
+    flex: 1, fontSize: 28, fontWeight: '800', color: Colors.gold,
+    textAlign: 'center', borderBottomWidth: 2, borderBottomColor: Colors.gold + '40',
+    paddingBottom: 4,
   },
-  bubble: {
-    backgroundColor: Colors.grayLight,
-    borderRadius: 20,
-    borderTopLeftRadius: 4,
-    padding: 20,
-    maxWidth: width * 0.85,
-    shadowColor: Colors.gold,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  bubbleText: {
-    fontSize: 17,
-    lineHeight: 26,
-    color: Colors.white,
-    fontWeight: '600',
-  },
-  answersContainer: {
-    marginTop: 15,
-    width: '100%',
-  },
-  optionsContainer: {
-    gap: 10,
-  },
-  optionButton: {
-    backgroundColor: Colors.grayLight,
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  optionButtonSelected: {
-    backgroundColor: Colors.gold,
-    borderColor: Colors.gold,
-  },
-  optionText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.white,
-  },
-  optionTextSelected: {
-    color: Colors.black,
-  },
-  scaleContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  scaleButton: {
-    flex: 1,
-    aspectRatio: 1,
-    backgroundColor: Colors.grayLight,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  scaleButtonSelected: {
-    backgroundColor: Colors.gold,
-    borderColor: Colors.gold,
-  },
-  scaleText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: Colors.white,
-  },
-  scaleTextSelected: {
-    color: Colors.black,
-  },
-  inputContainer: {
-    gap: 12,
-  },
-  input: {
-    backgroundColor: Colors.grayLight,
-    borderRadius: 16,
-    padding: 18,
-    fontSize: 16,
-    color: Colors.white,
-    fontWeight: '600',
-    borderWidth: 2,
-    borderColor: Colors.gold + '30',
-  },
-  textInput: {
-    minHeight: 100,
-    textAlignVertical: 'top',
-  },
-  submitButton: {
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  submitButtonGradient: {
-    padding: 18,
-    alignItems: 'center',
-  },
-  submitButtonText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: Colors.black,
-  },
-  startButton: {
-    marginTop: 20,
-    borderRadius: 16,
-    overflow: 'hidden',
-    alignSelf: 'flex-start',
-  },
-  startButtonGradient: {
-    paddingVertical: 18,
-    paddingHorizontal: 32,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  startButtonText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: Colors.black,
-  },
-  continueButton: {
-    marginTop: 15,
-    backgroundColor: Colors.gold,
-    borderRadius: 16,
-    padding: 18,
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    minWidth: 150,
-  },
-  continueButtonText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: Colors.black,
-  },
-  bottomSpacer: {
-    height: 100,
-  },
+  bodyUnit: { fontSize: 14, color: Colors.grayText, width: 30 },
+
+  // Finish
+  finishBtn: { borderRadius: 16, overflow: 'hidden', marginTop: 16 },
+  finishBtnDisabled: { opacity: 0.7 },
+  finishGradient: { paddingVertical: 20, alignItems: 'center' },
+  finishText: { fontSize: 18, fontWeight: '800', color: Colors.black },
 });
